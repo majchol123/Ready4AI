@@ -18,7 +18,6 @@ class QuizQuestion(BaseModel):
 
 def main():
     # Initialize the model
-    # Note: Using the model name from lc1.py
     llm = init_chat_model("claude-haiku-4-5", model_provider="anthropic")
     structured_llm = llm.with_structured_output(QuizQuestion)
 
