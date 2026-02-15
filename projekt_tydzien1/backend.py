@@ -1,6 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain.chat_models import init_chat_model
@@ -29,12 +29,13 @@ llm = init_chat_model(
     model_provider=os.getenv("LLM_PROVIDER"),
     temperature=float(os.getenv("LLM_TEMPERATURE"))
 )
-structured_llm = llm.with_structured_output(QuizQuestion)
+structured_llm = llm.with_structured_output(QuizQuestion, include_raw=True)
 
 # Chain with History
 chain_with_history = RunnableWithMessageHistory(
     structured_llm,
     get_session_history,
+    output_messages_key="raw",
 )
 
 @app.post("/start")
@@ -72,23 +73,24 @@ async def get_question(req: QuestionRequest):
         raise HTTPException(status_code=404, detail="Session not found")
     
     # Invoke chain
-    # We pass a simple prompt to trigger generation based on system prompt in history
     response = chain_with_history.invoke(
         [HumanMessage(content="Generuj kolejne pytanie.")],
         config={"configurable": {"session_id": req.session_id}}
     )
-    
-    # Manually add response to history because RunnableWithMessageHistory 
-    # does not support automatic saving of Pydantic objects.
-    history = get_session_history(req.session_id)
-    ai_msg_content = (
-        f"Pytanie: {response.question} "
-        f"(Opcje: a){response.a} b){response.b} c){response.c} d){response.d} "
-        f"Poprawna: {response.correct_answer})"
-    )
-    history.add_message(AIMessage(content=ai_msg_content))
-    
-    return response
+
+    # Manual fix for Anthropic tool use history with_structured_output uses tools. The history saves the AIMessage with tool_calls.
+    # But the "result" of the tool (the parsing) isn't automatically added as a ToolMessage.
+    # Anthropic API requires a ToolMessage to follow an AIMessage with tool_calls.
+    raw_msg = response["raw"]
+    if hasattr(raw_msg, "tool_calls") and raw_msg.tool_calls:
+        tool_call = raw_msg.tool_calls[0]
+        tool_msg = ToolMessage(
+            tool_call_id=tool_call["id"],
+            content="Question generated successfully" # Dummy content acts as tool result
+        )
+        get_session_history(req.session_id).add_message(tool_msg)
+
+    return response["parsed"]
 
 @app.delete("/cleanup/{session_id}")
 async def cleanup_session(session_id: str):
