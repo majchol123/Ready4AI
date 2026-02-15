@@ -6,7 +6,7 @@ Samodzielna aplikacja quizowa z podziałem na backend i frontend.
 
 1. Wejdź do katalogu projektu:
    ```bash
-   cd projekt
+   cd projekt_tydzien1
    ```
 
 2. (Opcjonalnie) Stwórz i aktywuj wirtualne środowisko:
