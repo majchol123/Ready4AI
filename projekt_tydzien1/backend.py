@@ -29,13 +29,13 @@ llm = init_chat_model(
     model_provider=os.getenv("LLM_PROVIDER"),
     temperature=float(os.getenv("LLM_TEMPERATURE"))
 )
-structured_llm = llm.with_structured_output(QuizQuestion, include_raw=True)
+# Initialize LLM with tools
+llm_with_tools = llm.bind_tools([QuizQuestion])
 
 # Chain with History
 chain_with_history = RunnableWithMessageHistory(
-    structured_llm,
-    get_session_history,
-    output_messages_key="raw",
+    llm_with_tools,
+    get_session_history
 )
 
 @app.post("/start")
@@ -72,25 +72,27 @@ async def get_question(req: QuestionRequest):
     if req.session_id not in store:
         raise HTTPException(status_code=404, detail="Session not found")
     
-    # Invoke chain
-    response = chain_with_history.invoke(
+    # Invoke chain - returns AIMessage
+    msg = chain_with_history.invoke(
         [HumanMessage(content="Generuj kolejne pytanie.")],
         config={"configurable": {"session_id": req.session_id}}
     )
 
-    # Manual fix for Anthropic tool use history with_structured_output uses tools. The history saves the AIMessage with tool_calls.
-    # But the "result" of the tool (the parsing) isn't automatically added as a ToolMessage.
-    # Anthropic API requires a ToolMessage to follow an AIMessage with tool_calls.
-    raw_msg = response["raw"]
-    if hasattr(raw_msg, "tool_calls") and raw_msg.tool_calls:
-        tool_call = raw_msg.tool_calls[0]
+    # Handle history and parsing
+    if msg.tool_calls:
+        tool_call = msg.tool_calls[0]
+        
+        # Add ToolMessage to satisfy API requirements (especially Anthropic)
         tool_msg = ToolMessage(
             tool_call_id=tool_call["id"],
-            content="Question generated successfully" # Dummy content acts as tool result
+            content="Parsed successfully"
         )
         get_session_history(req.session_id).add_message(tool_msg)
-
-    return response["parsed"]
+        
+        # Return clean QuizQuestion instance
+        return QuizQuestion(**tool_call["args"])
+    
+    raise HTTPException(status_code=500, detail="Model failed to generate structured output")
 
 @app.delete("/cleanup/{session_id}")
 async def cleanup_session(session_id: str):
