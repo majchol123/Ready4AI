@@ -55,7 +55,7 @@ async def start_quiz(config: QuizConfig):
     system_msg = (
         f"Jesteś kreatywnym twórcą quizów. Twoim zadaniem jest generowanie pytań na temat: {config.topic}. "
         f"Poziom trudności: {config.difficulty}. {difficulty_prompt.get(config.difficulty, '')} "
-        f"Każde pytanie musi być unikalne. Staraj się poruszać bardzo zróżnicowane aspekty tematu. "
+        f"Każde pytanie musi być unikalne. Poruszaj bardzo zróżnicowane aspekty tematu. "
         f"Unikaj pytań zbyt oczywistych i upewnij się, że tylko jedna odpowiedź jest poprawna."
     )
     
